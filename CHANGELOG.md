@@ -6,6 +6,7 @@
 
 ### Bugfixes
 
+- [#1339](https://github.com/influxdata/telegraf/issues/1339): Prometheus client output panic on service reload.
 - [#1330](https://github.com/influxdata/telegraf/issues/1330): Fix exec plugin panic when using single binary.
 - [#1336](https://github.com/influxdata/telegraf/issues/1336): Fixed incorrect prometheus metrics source selection.
 - [#1112](https://github.com/influxdata/telegraf/issues/1112): Set default Zookeeper chroot to empty string.
@@ -35,6 +36,7 @@ in conjunction with wildcard dimension values as it will control the amount of
 time before a new metric is included by the plugin.
 
 ### Features
+
 - [#1262](https://github.com/influxdata/telegraf/pull/1261): Add graylog input pluging.
 - [#1294](https://github.com/influxdata/telegraf/pull/1294): consul input plugin. Thanks @harnash
 - [#1164](https://github.com/influxdata/telegraf/pull/1164): conntrack input plugin. Thanks @robinpercy!
