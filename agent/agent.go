@@ -16,13 +16,13 @@ import (
 
 // Agent runs telegraf and collects data based on the given config
 type Agent struct {
-	Config *config.Config
+	Config     *config.Config
 }
 
 // NewAgent returns an Agent struct based off the given Config
 func NewAgent(config *config.Config) (*Agent, error) {
 	a := &Agent{
-		Config: config,
+		Config:     config,
 	}
 
 	if !a.Config.Agent.OmitHostname {
@@ -235,6 +235,9 @@ func (a *Agent) flush() {
 	for _, o := range a.Config.Outputs {
 		go func(output *internal_models.RunningOutput) {
 			defer wg.Done()
+      if a.Config.Filter != nil {
+  			a.Config.Filter.OutputMetric(output)
+      }
 			err := output.Write()
 			if err != nil {
 				log.Printf("Error writing to output [%s]: %s\n",
@@ -242,8 +245,8 @@ func (a *Agent) flush() {
 			}
 		}(o)
 	}
-
 	wg.Wait()
+  a.Config.Filter.Reset()
 }
 
 // flusher monitors the metrics input channel and flushes on the minimum interval
@@ -264,8 +267,12 @@ func (a *Agent) flusher(shutdown chan struct{}, metricC chan telegraf.Metric) er
 			internal.RandomSleep(a.Config.Agent.FlushJitter.Duration, shutdown)
 			a.flush()
 		case m := <-metricC:
-			for _, o := range a.Config.Outputs {
-				o.AddMetric(m)
+			if a.Config.Filter != nil && a.Config.Filter.IsEnabled(m.Name()) {
+				a.Config.Filter.AddMetric(m)
+			} else {
+				for _, o := range a.Config.Outputs {
+					o.AddMetric(m)
+				}
 			}
 		}
 	}

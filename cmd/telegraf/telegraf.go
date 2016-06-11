@@ -15,6 +15,7 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/all"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	_ "github.com/influxdata/telegraf/plugins/outputs/all"
+	_ "github.com/influxdata/telegraf/plugins/filters/all"
 )
 
 var fDebug = flag.Bool("debug", false,

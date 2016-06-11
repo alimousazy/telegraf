@@ -18,6 +18,7 @@ import (
 	"github.com/influxdata/telegraf/internal/models"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/outputs"
+	"github.com/influxdata/telegraf/plugins/filters"
 	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/plugins/serializers"
 
@@ -49,15 +50,16 @@ type Config struct {
 	Agent   *AgentConfig
 	Inputs  []*internal_models.RunningInput
 	Outputs []*internal_models.RunningOutput
+  Filter telegraf.Filter
 }
 
 func NewConfig() *Config {
 	c := &Config{
 		// Agent defaults:
 		Agent: &AgentConfig{
-			Interval:      internal.Duration{Duration: 10 * time.Second},
-			RoundInterval: true,
-			FlushInterval: internal.Duration{Duration: 10 * time.Second},
+			Interval:          internal.Duration{Duration: 10 * time.Second},
+			RoundInterval:     true,
+			FlushInterval:     internal.Duration{Duration: 10 * time.Second},
 		},
 
 		Tags:          make(map[string]string),
@@ -121,6 +123,7 @@ type AgentConfig struct {
 	Quiet        bool
 	Hostname     string
 	OmitHostname bool
+
 }
 
 // Inputs returns a list of strings of the configured inputs.
@@ -516,6 +519,21 @@ func (c *Config) LoadConfig(path string) error {
 						pluginName, path)
 				}
 			}
+  case "filter":
+	 	for pluginName, pluginVal := range subTable.Fields {
+				switch pluginSubTable := pluginVal.(type) {
+				case *ast.Table:
+					if err = c.addFilter(pluginName, pluginSubTable); err != nil {
+						return fmt.Errorf("Error parsing %s, %s", path, err)
+					}
+				case []*ast.Table:
+          return fmt.Errorf("You can only specify one filter.", path, err)
+				default:
+					return fmt.Errorf("Unsupported config format: %s, file %s",
+						pluginName, path)
+				}
+			}
+
 		// Assume it's an input input for legacy config file support if no other
 		// identifiers are present
 		default:
@@ -580,6 +598,22 @@ func (c *Config) addOutput(name string, table *ast.Table) error {
 	ro := internal_models.NewRunningOutput(name, output, outputConfig,
 		c.Agent.MetricBatchSize, c.Agent.MetricBufferLimit)
 	c.Outputs = append(c.Outputs, ro)
+	return nil
+}
+
+func (c *Config) addFilter(name string, table *ast.Table) error {
+  fmt.Printf("%v", filters.Filters)
+	creator, ok := filters.Filters[name]
+	if !ok {
+		return fmt.Errorf("Undefined but requested filter: %s", name)
+	}
+	filter := creator()
+
+	if err := config.UnmarshalTable(table, filter); err != nil {
+		return err
+	}
+
+	c.Filter = filter
 	return nil
 }
 
