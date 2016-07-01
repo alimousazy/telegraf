@@ -2,13 +2,17 @@ package histogram
 
 import (
 	"crypto/sha1"
+	"fmt"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/filters"
 	"io"
 	"log"
+	"sort"
 	"strconv"
 	"time"
 )
+
+const field_sep = "."
 
 type metricID struct {
 	Name    string
@@ -79,9 +83,14 @@ func (h *Histogram) Start(shutdown chan struct{}) {
 
 func (h *Histogram) hashTags(m map[string]string) (result [sha1.Size]byte) {
 	hash := sha1.New()
-	io.WriteString(hash, "tags:")
-	for key, _ := range m {
-		io.WriteString(hash, key)
+	keys := []string{}
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, item := range keys {
+		fmt.Printf("%s", item+m[item])
+		io.WriteString(hash, item+m[item])
 	}
 	copy(result[:], hash.Sum(nil))
 	return result
@@ -92,6 +101,7 @@ func (h *Histogram) AddMetric(metric telegraf.Metric) {
 		Name:    metric.Name(),
 		TagHash: h.hashTags(metric.Tags()),
 	}
+	fmt.Printf("\n%v\n", metric.Tags())
 	if h.fieldMap[mID] == nil {
 		h.fieldMap[mID] = make(map[string]*Aggregate)
 	}
@@ -125,14 +135,14 @@ func (h *Histogram) OutputMetric() {
 		for key, val := range fields {
 			for _, perc := range h.Metrics[mID.Name] {
 				p := strconv.FormatFloat(perc*100, 'f', 0, 64)
-				mFields[key+"_p"+p] = val.Quantile(perc)
+				mFields[key+field_sep+"p"+p] = val.Quantile(perc)
 			}
-			mFields[key+"_variance"] = val.Variance()
-			mFields[key+"_mean"] = val.Mean()
-			mFields[key+"_count"] = val.Count()
-			mFields[key+"_sum"] = val.Sum()
-			mFields[key+"_max"] = val.Max()
-			mFields[key+"_min"] = val.Min()
+			mFields[key+field_sep+"variance"] = val.Variance()
+			mFields[key+field_sep+"mean"] = val.Mean()
+			mFields[key+field_sep+"count"] = val.Count()
+			mFields[key+field_sep+"sum"] = val.Sum()
+			mFields[key+field_sep+"max"] = val.Max()
+			mFields[key+field_sep+"min"] = val.Min()
 		}
 		metric, _ := telegraf.NewMetric(mID.Name, h.metricTags[mID], mFields, time.Now().UTC())
 		h.outch <- metric

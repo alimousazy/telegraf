@@ -6,6 +6,7 @@ import (
 	"github.com/influxdata/telegraf/plugins/serializers/graphite"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
 	"github.com/influxdata/telegraf/plugins/serializers/json"
+	"github.com/influxdata/telegraf/plugins/serializers/logmon"
 )
 
 // SerializerOutput is an interface for output plugins that are able to
@@ -47,8 +48,14 @@ func NewSerializer(config *Config) (Serializer, error) {
 		serializer, err = NewGraphiteSerializer(config.Prefix, config.Template)
 	case "json":
 		serializer, err = NewJsonSerializer()
+	case "logmon":
+		serializer, err = NewLogmonSerializer()
 	}
 	return serializer, err
+}
+
+func NewLogmonSerializer() (Serializer, error) {
+	return &logmon.LogmonSerializer{}, nil
 }
 
 func NewJsonSerializer() (Serializer, error) {
