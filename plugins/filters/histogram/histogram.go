@@ -2,7 +2,6 @@ package histogram
 
 import (
 	"crypto/sha1"
-	"fmt"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/filters"
 	"io"
@@ -89,7 +88,6 @@ func (h *Histogram) hashTags(m map[string]string) (result [sha1.Size]byte) {
 	}
 	sort.Strings(keys)
 	for _, item := range keys {
-		fmt.Printf("%s", item+m[item])
 		io.WriteString(hash, item+m[item])
 	}
 	copy(result[:], hash.Sum(nil))
@@ -101,7 +99,6 @@ func (h *Histogram) AddMetric(metric telegraf.Metric) {
 		Name:    metric.Name(),
 		TagHash: h.hashTags(metric.Tags()),
 	}
-	fmt.Printf("\n%v\n", metric.Tags())
 	if h.fieldMap[mID] == nil {
 		h.fieldMap[mID] = make(map[string]*Aggregate)
 	}
@@ -130,10 +127,14 @@ func (h *Histogram) IsEnabled(name string) bool {
 }
 
 func (h *Histogram) OutputMetric() {
+  all_percentile := h.Metrics["_ALL_METRIC"]
 	for mID, fields := range h.fieldMap {
 		mFields := make(map[string]interface{})
 		for key, val := range fields {
-			for _, perc := range h.Metrics[mID.Name] {
+      percentile, ok := h.Metrics[mID.Name]; if !ok {
+        percentile = all_percentile
+      }
+			for _, perc := range percentile {
 				p := strconv.FormatFloat(perc*100, 'f', 0, 64)
 				mFields[key+field_sep+"p"+p] = val.Quantile(perc)
 			}
