@@ -14,40 +14,58 @@ type LogmonSerializer struct {
 }
 
 
+func (s *LogmonSerializer) inArray(list []string, item string) (bool) {
+  for _, l := range list {
+    if(strings.Compare(l, item) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
 func (s *LogmonSerializer) Serialize(metric telegraf.Metric) ([]string, error) {
   pctRegex := regexp.MustCompile("p([0-9]+)")
 	out := []string{}
 	fields := []string{}
   tags  := metric.Tags()
-	m := make(map[string]map[string]string)
+  ignore_field := []string{"variance"}
+	m := make(map[string]map[string]interface{})
 
   for k, v := range metric.Fields() {
     value, ok := v.(float64); if !ok {
       continue
     }
-    stValue := strconv.FormatFloat(value, 'f', -1, 64)
-    pctRegex.ReplaceAllString(k, "pct$1")
+    k = pctRegex.ReplaceAllString(k, "pct$1")
     list := strings.Split(k, ".")
     maping := map[string]string{
       "count" : "cnt",
+      "mean" : "soq",
     }
     if(len(list) == 2) {
       mName := metric.Name() + "." + list[0]
       if m[mName] == nil {
-        m[mName] = make(map[string]string)
+        m[mName] = make(map[string]interface{})
         m[mName]["type"] = "HIS"
+        m[mName]["unit"] = "n"
+      }
+      if s.inArray(ignore_field, list[1]) {
+        continue
       }
       t, ok := maping[list[1]] ; if (!ok) {
-        m[mName][list[1]] = stValue
+        m[mName][list[1]] = value
       } else  {
-        m[mName][t] = stValue
+        m[mName][t] = value
       }
     } else {
+      //"cur":0,"unit":"Calls","min":0,"max":0,"type":"GAU"
       mName := metric.Name() + "." + k
       _, ok := m[mName]; if (!ok) {
-         m[mName] = make(map[string]string)
+         m[mName] = make(map[string]interface{})
       }
-      m[mName]["value"] = stValue
+      m[mName]["cur"] = value
+      m[mName]["min"] = value
+      m[mName]["max"] = value
+      m[mName]["unit"] = "n"
+      m[mName]["type"] = "GAU"
     }
   }
 	serialized, err := ejson.Marshal(m)
@@ -56,12 +74,9 @@ func (s *LogmonSerializer) Serialize(metric telegraf.Metric) ([]string, error) {
 	}
   year, month, day := metric.Time().Date()
   hour, min, sec := metric.Time().Clock()
-  
-//WMPLTFMLOG254103  1466690220371 2016-06-23 13:57:00.371 rules-api-11030078-16-54937210  - 54937210  - - PROD  ship-pricing-rules  prod-dfw3 prod  3.1.27  9f312313-1f-1557d8cb153005  ME  not_applicable  - pool_ship_pricing_gecwalmart_comussprp1ship_pricing_gecwalmart_com  activate  - {"absolute":{"unit":"Calls","min":0,"soq":0,"max":0,"cnt":0,"sum":0,"type":"BAS"},"TIMER":{"unit":"us","min":0,"soq":0,"pct95":0,"max":0,"pct75":0,"cnt":0,"sum":0,"type":"HIS","pct999":0}}
   fields = append(fields, tags["wm_sign"])
-  fields = append(fields, strconv.FormatInt(metric.UnixNano() / 1000, 10))
-  fields = append(fields, fmt.Sprintf("%02d-%02d-%02d", year, int(month), day))
-  fields = append(fields, fmt.Sprintf("%02d:%02d:%02d.000", hour, min, sec))
+  fields = append(fields, strconv.FormatInt(metric.UnixNano() / 1000000, 10))
+  fields = append(fields, fmt.Sprintf("%02d-%02d-%02d", year, int(month), day) + " " + fmt.Sprintf("%02d:%02d:%02d.000", hour, min, sec))
   fields = append(fields, tags["host"])
   fields = append(fields, "-")
   fields = append(fields, tags["compute_id"])

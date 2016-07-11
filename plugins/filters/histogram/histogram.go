@@ -114,8 +114,20 @@ func (h *Histogram) AddMetric(metric telegraf.Metric) {
 			}
 			hist := h.fieldMap[mID][key]
 			hist.Add(v)
+		case int:
+			if h.fieldMap[mID][key] == nil {
+				h.fieldMap[mID][key] = NewAggregate(h.Bucketsize)
+			}
+			hist := h.fieldMap[mID][key]
+			hist.Add(float64(v))
+		case int64:
+			if h.fieldMap[mID][key] == nil {
+				h.fieldMap[mID][key] = NewAggregate(h.Bucketsize)
+			}
+			hist := h.fieldMap[mID][key]
+			hist.Add(float64(v))
 		default:
-			log.Printf("When stats enabled all the fields should be of type float64 [field name %s]", key)
+			log.Printf("When Histogram enabled all the fields should be of type float64 [field name %s]", key)
 		}
 	}
 }
@@ -127,13 +139,14 @@ func (h *Histogram) IsEnabled(name string) bool {
 }
 
 func (h *Histogram) OutputMetric() {
-  all_percentile := h.Metrics["_ALL_METRIC"]
+	all_percentile := h.Metrics["_ALL_METRIC"]
 	for mID, fields := range h.fieldMap {
 		mFields := make(map[string]interface{})
 		for key, val := range fields {
-      percentile, ok := h.Metrics[mID.Name]; if !ok {
-        percentile = all_percentile
-      }
+			percentile, ok := h.Metrics[mID.Name]
+			if !ok {
+				percentile = all_percentile
+			}
 			for _, perc := range percentile {
 				p := strconv.FormatFloat(perc*100, 'f', 0, 64)
 				mFields[key+field_sep+"p"+p] = val.Quantile(perc)
