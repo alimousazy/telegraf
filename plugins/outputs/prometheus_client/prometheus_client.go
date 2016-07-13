@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs"
@@ -25,8 +26,11 @@ var (
 )
 
 type PrometheusClient struct {
-	Listen  string
-	metrics map[string]*prometheus.UntypedVec
+	Listen string
+
+	metrics map[string]prometheus.Metric
+
+	sync.Mutex
 }
 
 var sampleConfig = `
@@ -35,6 +39,15 @@ var sampleConfig = `
 `
 
 func (p *PrometheusClient) Start() error {
+	prometheus.MustRegister(p)
+	defer func() {
+		if r := recover(); r != nil {
+			// recovering from panic here because there is no way to stop a
+			// running http go server except by a kill signal. Since the server
+			// does not stop on SIGHUP, Start() will panic when the process
+			// is reloaded.
+		}
+	}()
 	if p.Listen == "" {
 		p.Listen = "localhost:9126"
 	}
@@ -44,7 +57,6 @@ func (p *PrometheusClient) Start() error {
 		Addr: p.Listen,
 	}
 
-	p.metrics = make(map[string]*prometheus.UntypedVec)
 	go server.ListenAndServe()
 	return nil
 }
@@ -72,7 +84,27 @@ func (p *PrometheusClient) Description() string {
 	return "Configuration for the Prometheus client to spawn"
 }
 
+// Implements prometheus.Collector
+func (p *PrometheusClient) Describe(ch chan<- *prometheus.Desc) {
+	prometheus.NewGauge(prometheus.GaugeOpts{Name: "Dummy", Help: "Dummy"}).Describe(ch)
+}
+
+// Implements prometheus.Collector
+func (p *PrometheusClient) Collect(ch chan<- prometheus.Metric) {
+	p.Lock()
+	defer p.Unlock()
+
+	for _, m := range p.metrics {
+		ch <- m
+	}
+}
+
 func (p *PrometheusClient) Write(metrics []telegraf.Metric) error {
+	p.Lock()
+	defer p.Unlock()
+
+	p.metrics = make(map[string]prometheus.Metric)
+
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -118,43 +150,23 @@ func (p *PrometheusClient) Write(metrics []telegraf.Metric) error {
 				continue
 			}
 
-			// Create a new metric if it hasn't been created yet.
-			if _, ok := p.metrics[mname]; !ok {
-				p.metrics[mname] = prometheus.NewUntypedVec(
-					prometheus.UntypedOpts{
-						Name: mname,
-						Help: "Telegraf collected metric",
-					},
-					labels,
-				)
-				if err := prometheus.Register(p.metrics[mname]); err != nil {
-					log.Printf("prometheus_client: Metric failed to register with prometheus, %s", err)
-					continue
-				}
-			}
-
+			desc := prometheus.NewDesc(mname, "Telegraf collected metric", nil, l)
+			var metric prometheus.Metric
+			var err error
 			switch val := val.(type) {
 			case int64:
-				m, err := p.metrics[mname].GetMetricWith(l)
-				if err != nil {
-					log.Printf("ERROR Getting metric in Prometheus output, "+
-						"key: %s, labels: %v,\nerr: %s\n",
-						mname, l, err.Error())
-					continue
-				}
-				m.Set(float64(val))
+				metric, err = prometheus.NewConstMetric(desc, prometheus.UntypedValue, float64(val))
 			case float64:
-				m, err := p.metrics[mname].GetMetricWith(l)
-				if err != nil {
-					log.Printf("ERROR Getting metric in Prometheus output, "+
-						"key: %s, labels: %v,\nerr: %s\n",
-						mname, l, err.Error())
-					continue
-				}
-				m.Set(val)
+				metric, err = prometheus.NewConstMetric(desc, prometheus.UntypedValue, val)
 			default:
 				continue
 			}
+			if err != nil {
+				log.Printf("ERROR creating prometheus metric, "+
+					"key: %s, labels: %v,\nerr: %s\n",
+					mname, l, err.Error())
+			}
+			p.metrics[desc.String()] = metric
 		}
 	}
 	return nil
